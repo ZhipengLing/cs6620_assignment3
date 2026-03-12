@@ -2,12 +2,25 @@
 Size-tracking Lambda – triggered by S3 object events via EventBridge.
 Author: Zhipeng Ling
 
-Handles both EventBridge and S3 Notification event formats.
+Event Format Note
+-----------------
+Because we use EventBridge (instead of direct S3 Notifications) to avoid
+CDK circular dependency, the event format is different:
+
+  EventBridge format:
+    {"source": "aws.s3", "detail-type": "Object Created",
+     "detail": {"bucket": {"name": "..."}, ...}}
+
+  S3 Notification format (Assignment 2):
+    {"Records": [{"eventName": "ObjectCreated:Put",
+     "s3": {"bucket": {"name": "..."}, ...}}]}
+
+The _parse_event() function handles both formats for compatibility.
 
 Each invocation:
-  1. Reads the bucket name from the event
-  2. Calculates total bucket size and object count
-  3. Writes a snapshot to DynamoDB
+  1. Parses the bucket name from the event (EventBridge or S3 format)
+  2. Calculates total bucket size and object count via list_objects_v2
+  3. Writes a snapshot to DynamoDB (table name from TABLE_NAME env var)
 """
 
 import json
@@ -21,6 +34,8 @@ import boto3
 s3_client = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb")
 
+# TABLE_NAME is injected by CDK via Lambda environment variables.
+# It resolves to the actual DynamoDB table name at deploy time.
 TABLE_NAME = os.environ.get("TABLE_NAME", "S3-object-size-history")
 table = dynamodb.Table(TABLE_NAME)
 
@@ -67,23 +82,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 def _parse_event(event: Dict[str, Any]) -> Tuple[str, str]:
     """
-    Parse bucket name and event type from either EventBridge or S3 Notification format.
+    Parse bucket name and event type from either event format.
 
-    EventBridge format:
+    EventBridge format (used in Assignment 3 CDK):
       {"source": "aws.s3", "detail-type": "Object Created",
        "detail": {"bucket": {"name": "..."}, ...}}
 
-    S3 Notification format:
+    S3 Notification format (used in Assignment 2):
       {"Records": [{"eventName": "ObjectCreated:Put",
        "s3": {"bucket": {"name": "..."}, ...}}]}
     """
-    # EventBridge format
+    # EventBridge format — check for "detail" and "source" keys
     if "detail" in event and "source" in event:
         bucket_name = event["detail"]["bucket"]["name"]
         event_name = event.get("detail-type", "Unknown")
         return bucket_name, event_name
 
-    # S3 Notification format (fallback)
+    # S3 Notification format (fallback for backward compatibility)
     record = event["Records"][0]
     bucket_name = record["s3"]["bucket"]["name"]
     event_name = record["eventName"]
