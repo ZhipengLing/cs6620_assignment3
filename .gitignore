@@ -1,0 +1,15 @@
+*.swp
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+cdk.out/
+*.egg-info/
+dist/
+build/
+.DS_Store
+node_modules/
+
+# Lambda layer zip (too large for git, build before deploy)
+layers/matplotlib-layer.zip
